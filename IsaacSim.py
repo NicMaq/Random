@@ -19,15 +19,6 @@ import numpy as np
 
 from solutions.JetbotControllers import MoveToPointController
 
-from omni.isaac.core.utils.nucleus import get_assets_root_path
-from omni.isaac.core.tasks import BaseTask
-import numpy as np
-
-## Old Imports
-from omni.isaac.core.utils.types import ArticulationAction
-from omni.isaac.wheeled_robots.robots import WheeledRobot
-
-## New Imports
 from omni.isaac.core.objects import DynamicCuboid
 from omni.isaac.franka import Franka
 from omni.isaac.franka.controllers import PickPlaceController
@@ -233,7 +224,7 @@ class JetbotManager2(JetbotManager):
         if self._scene.task_state != self._task_states[self._state]: return
         super().pre_step(control_index, simulation_time)
         
-        class ExerciseFrankaAndJetbot(SimpleBase3):
+class ExerciseFrankaAndJetbot(SimpleBase3):
         
     def set_up_scene(self, scene):
         scene.add_default_ground_plane()
