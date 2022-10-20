@@ -1,2 +1,2 @@
 # Random
-This repository gather code from different projects
+This repository gathers code from different projects
