@@ -5,7 +5,7 @@ from omni.kit.viewport_legacy import get_default_viewport_window
 from abc import abstractmethod
 import asyncio
 import gc
-import carb
+#import carb
 
 from omni.isaac.core.utils.nucleus import get_assets_root_path
 from omni.isaac.core.utils.stage import add_reference_to_stage
@@ -25,7 +25,7 @@ from omni.isaac.franka.controllers import PickPlaceController
 
 class SimpleBase3:
     
-    '''Simple Interface with Kit for some simple extensions'''
+    #Simple Interface with Kit for some simple extensions
     
     def set_initial_camera_params(self, cam_center=[2,2,1], cam_target=[0,0,0]):
         ## Sets camera starting position and viewing target
@@ -53,26 +53,32 @@ class SimpleBase3:
         self.set_initial_camera_params(**kwargs)
         if hasattr(self, "set_up_scene"):
             self.set_up_scene(self._world.scene)
-        
+
         await self._world.reset_async() 
         await self._world.pause_async() 
-        
+
         if hasattr(self, "post_reset"):
             self.post_reset()
-        
+
         ## Make the extension-wide pre_step method optional
         if hasattr(self, "pre_step"):
             self._world.add_physics_callback("pre_step", self.pre_step)
-        
+
         ## If there are any tasks, make sure they do per-step actions
         if len(self._world.get_current_tasks()) > 0:
             self._world.add_physics_callback("tasks_step", self._world.step_async)
 
         if start: await self._world.play_async() 
             
-    def load(self, start=True, new_stage=False, **kwargs):
-        asyncio.get_running_loop().create_task(
-            self.load_world_async(start, new_stage, **kwargs))
+#    def load(self, start=True, new_stage=False, **kwargs):
+#        asyncio.get_running_loop().create_task(
+#           self.load_world_async(start, new_stage, **kwargs))
+
+#class HelloGround(SimpleBase3):
+#    def set_up_scene(self, scene):
+#        scene.add_default_ground_plane()
+
+#HelloGround().load()            
 
 class JetbotManager(BaseTask):
     
@@ -175,7 +181,7 @@ class FrankaManager(BaseTask):
     def _increase_state(self):
         self._state += 1
     
-    '''BEGIN NEW METHODS'''
+    #BEGIN NEW METHODS'''
     def set_cube_name(self, cube_name):
         ## current cube name for which goals will be added
         self._cube_name = cube_name
@@ -184,7 +190,7 @@ class FrankaManager(BaseTask):
         ## Cube named _cube_names[i] which will be moved to _goals[i]        
         self._cube_names += [self._cube_name]
         self._goals += [goal_pos]
-    '''END NEW METHODS'''
+    #END NEW METHODS'''
 
 class FrankaManager2(FrankaManager):
     
@@ -230,10 +236,10 @@ class ExerciseFrankaAndJetbot(SimpleBase3):
         scene.add_default_ground_plane()
         scene.task_state = 0
         
-        '''TODO: Figure out where you want to drop your initial cube'''
+        #'''TODO: Figure out where you want to drop your initial cube'''
         cube_pos = np.array([1, -1, 1])
 
-        '''TODO: Figure out where you want your Franka to move your cube'''
+        #'''TODO: Figure out where you want your Franka to move your cube'''
         franka_goal = np.array([ .3,  .3,  .5])
         
         cube = scene.add(DynamicCuboid(
@@ -247,27 +253,27 @@ class ExerciseFrankaAndJetbot(SimpleBase3):
         jetbot = JetbotManager2('jetbot_task', start_position=np.array([1, 1, 0]))
         
         franka.set_cube_name(cube.name)
-        '''TODO: Move the Jetbot to a position where it can get the cube
-        You can do this manually or set up a heuristic which will always 
-        position it to where it can scoop up nicely.
+        #'''TODO: Move the Jetbot to a position where it can get the cube
+        #You can do this manually or set up a heuristic which will always 
+        #position it to where it can scoop up nicely.
         
-        HINT: Just give move_to_pos a 0 as the task_state. 
-        Increase this for subsequent commands
-        '''
+        #HINT: Just give move_to_pos a 0 as the task_state. 
+        #Increase this for subsequent commands
+        #'''
         jetbot.move_to_pos(cube_pos * 1.5, 0)
         
-        '''TODO: Tell the jetbot to pull in the cube until it is in 
-        reach of the franka.
-        '''
+        #'''TODO: Tell the jetbot to pull in the cube until it is in 
+        #reach of the franka.
+        #'''
         jetbot.move_to_pos(cube_pos / 3, 1)
-        '''TODO: Move the jetbot away so it doesn't get struck by the franka
-        '''
+        #'''TODO: Move the jetbot away so it doesn't get struck by the franka
+        #'''
         jetbot.move_to_pos(cube_pos / 2 , 2)
-        '''TODO: Tell the franka to pick up the cube and move it somewhere
-        '''
+        #'''TODO: Tell the franka to pick up the cube and move it somewhere
+        #'''
         franka.move_cube_to_pos(franka_goal, 3)
-        '''TODO: Touch the cube with the Jetbot
-        '''
+        #'''TODO: Touch the cube with the Jetbot
+        #'''
         jetbot.move_to_pos(franka_goal, 4)
         self._world.add_task(franka)
         self._world.add_task(jetbot)
