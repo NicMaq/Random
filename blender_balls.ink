@@ -1,29 +1,12 @@
 inkling "2.0"
 
-#using Goal - OPTIONAL
-using Goal
-using Math
 using Number
 
-#Action Space Box(-1.0, 1.0, (1,), float32)
-#action 0 Force applied on the cart -1 1 slider slide Force (N)
-#Observation Shape (11,)
-#Observation High [inf inf inf inf inf inf inf inf inf inf inf]
-#Observation Low [-inf -inf -inf -inf -inf -inf -inf -inf -inf -inf -inf]
-
-#0 - position of the cart along the linear surface - position (m)
-#1 - sine of the angle between the cart and the first pole - sin(hinge)
-#2 - sine of the angle between the two poles - sin(hinge2)
-#3 - cosine of the angle between the cart and the first pole - cos(hinge)
-#4 - cosine of the angle between the two poles - cos(hinge2)
-#5 - velocity of the cart - velocity (m/s)
-#6 - angular velocity of the angle between the cart and the first pole - angular velocity (rad/s)
-#7 - angular velocity of the angle between the two poles - angular velocity (rad/s)
-#8 - constraint force - 1 - Force (N) - see https://mujoco.readthedocs.io/en/latest/computation.html
-#9 - constraint force - 2 - Force (N)
-#10 - constraint force - 3 - Force (N)
-
-#Import gym.make("InvertedDoublePendulum-v4")
+#Action Space Discreet(3, float32)
+#action 0 Cart moves left
+#action 1 Cart does not moves
+#action 2 Cart moves right
+#Observation Shape (3,) Cart Position, Ball y, Ball z
 
 function Reward(gs: BlenderState) {
     return gs._gym_reward
@@ -32,20 +15,6 @@ function Reward(gs: BlenderState) {
 function Terminal(gs: BlenderState) {
     return gs._gym_terminal
 }
-
-const max_position = 100 #m
-const max_speed = 100 #m/s
-const max_ang_speed = 100 #rad/s
-const max_constraint = 100 #N
-
-
-#"state": {
-#    "cart_pos": 0,
-#    "ball_y": 3,
-#    "ball_z": 16,
-#    "_gym_reward": 0,
-#    "_gym_terminal": 0
-#},
 
 type BlenderState {
     cart_pos: Number.Float32,
@@ -96,7 +65,7 @@ simulator Blender(action: BlenderAction, config: SimConfig): BlenderState {
 
 graph (input: ObservableState): SimAction {
 
-    concept StayUp(input): SimAction {
+    concept Catch(input): SimAction {
         curriculum {
             source Blender
             reward Reward

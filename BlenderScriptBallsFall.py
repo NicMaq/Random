@@ -6,9 +6,15 @@ import os
 import logging
 import time
 import threading
+import mathutils
+import imageio
+from skimage.transform import rescale, resize, downscale_local_mean
+import cv2
+
+from datetime import datetime
+
 # Manage communication between threads
 # msg2Blender = ('Reset_Blender', {'nBalls':1})
-
 import queue
 
 import site
@@ -38,12 +44,14 @@ registered_session: SimulatorSessionResponse = client.session.create(workspace_n
 print(f"Registered simulator. {registered_session.session_id}")
 
 
-SAVE_DIR = '/home/nicolas/Workspace/ml/logs/FallingBalls'
+#SAVE_DIR = '/home/nicolas/Workspace/ml/logs/FallingBalls' #Ubuntu
+SAVE_DIR = '/Users/nicolas/Workspace/ml/logs/FallingBalls' #MacOS
 
 #Parameters
 heightFrame = 80
 widthFrame = 80
 nBalls = 1
+run_thread = True
 
 class SimulatorModel:
 
@@ -56,19 +64,24 @@ class SimulatorModel:
     def reset(self, config) -> Dict[str, Any]:
 
         # Put message in q_2blender to ask Blender to reset
-        print('q_2blender - Put Reset_Blender')
+        log.info("q_2blender - Put Reset_Blender")
+        #print('q_2blender - Put Reset_Blender')
         msg2Blender = ('Reset_Blender', {'nBalls':1})
         self.q_2blender.put(msg2Blender)
-        print('q_2blender - End Put Reset_Blender')
+        #log.info("q_2blender - End Put Reset_Blender")
+        #print('q_2blender - End Put Reset_Blender')
         self.q_2blender.join()  
 
         # Get message from q_2bonsai to set returned states
-        print('q_2bonsai - Get Reset_Bonsai')
+        log.info("q_2bonsai - Get Reset_Bonsai")
+        #print('q_2bonsai - Get Reset_Bonsai')
         msgFromBlender = self.q_2bonsai.get()
-        print('msgFromBlender is: ', msgFromBlender)
+        log.info(f'{"msgFromBlender is: {} ".format(msgFromBlender)}')
+        #print('msgFromBlender is: ', msgFromBlender)
         states = msgFromBlender[1]['states']
         self.q_2bonsai.task_done()
-        print('q_2bonsai - End Get Reset_Bonsai')
+        #log.info("q_2bonsai - End Get Reset_Bonsai")
+        #print('q_2bonsai - End Get Reset_Bonsai')
 
         # return states
         returned_dict = self._gym_to_state(states, 0.0, False)
@@ -79,26 +92,33 @@ class SimulatorModel:
     def step(self, action) -> Dict[str, Any]:
         
         #if self.args.debug: 
-        print('step with action: ', action )
+        log.info(f'{"step with action: {} ".format(action)}')
+        #print('step with action: ', action )
         # Add message in queue to step
 
         # Put message in q_2blender to ask Blender to do a step
-        print('q_2blender - Put Step_Blender')
-        msg2Blender = ('Step_Blender', {'actions':action})
+        log.info("q_2blender - Put Step_Blender")
+        #print('q_2blender - Put Step_Blender')
+        msg2Blender = ('Step_Blender', action)
         self.q_2blender.put(msg2Blender)
-        print('q_2blender - End Put Step_Blender')
+        #log.info("q_2blender - End Put Step_Blender")
+        #print('q_2blender - End Put Step_Blender')
         self.q_2blender.join()  
 
         # Get message from q_2bonsai and set next_state, step_reward, done
-        print('q_2bonsai - Get Step_Bonsai')
+        log.info("q_2bonsai - Get Step_Bonsai")
+        #print('q_2bonsai - Get Step_Bonsai')
         msgFromBlender = self.q_2bonsai.get()
-        print('msgFromBlender is: ', msgFromBlender)
+        log.info(f'{"msgFromBlender is: {} ".format(msgFromBlender)}')
+        #print('msgFromBlender is: ', msgFromBlender)
         dataBlender = msgFromBlender[1]
         self.q_2bonsai.task_done()
-        print('q_2bonsai - End Get Step_Bonsai')
+        log.info("q_2bonsai - End Get Step_Bonsai")
+        #print('q_2bonsai - End Get Step_Bonsai')
         
         #{'new_state': [0.0, 5.0, 15.99063777923584], 'step_reward': 0, 'done': False, 'truncated': False}
-        print('dataBlender', dataBlender) 
+        #log.info(f'{"dataBlender is {} ".format(dataBlender)}')
+        #print('dataBlender', dataBlender) 
         new_state = dataBlender['new_state']
         step_reward = dataBlender['step_reward']
         done = dataBlender['done']
@@ -107,22 +127,6 @@ class SimulatorModel:
 
         return returned_dict
 
-    '''
-    {
-    "sequenceId": 2,
-    "contains": "state",
-    "state": {
-        "cart_pos": 0,
-        "ball_y": 3,
-        "ball_z": 16,
-        "_gym_reward": 0,
-        "_gym_terminal": 0
-    },
-    "idle": null,
-    "halted": false,
-    "error": null
-    }
-    '''
 
     def _gym_to_state(self, next_state, step_reward, done ):
         state = {
@@ -151,12 +155,14 @@ class SimulatorModel:
 
 def thread_simulate(q_2blender, q_2bonsai):
 
+    global run_thread
+
     sequence_id = 1
     sim_model = SimulatorModel(q_2blender, q_2bonsai)
     sim_model_state = { 'sim_halted': False }
 
     try:
-        while True:
+        while run_thread:
             sim_state = SimulatorState(sequence_id=sequence_id, state=sim_model_state, halted=sim_model_state.get('sim_halted', False))
             if sequence_id % 100 == 0: print('sim_state:', sim_state)
 
@@ -176,45 +182,60 @@ def thread_simulate(q_2blender, q_2bonsai):
             elif event.type == "EpisodeFinish":
                 sim_model_state = { 'sim_halted': False }
             elif event.type == "Unregister":
-                print(f"Simulator Session unregistered by platform because '{event.unregister.details}'")
+                log.info(f'{"Simulator Session unregistered by platform because {} ".format(event.unregister.details)}')
+                #print(f"Simulator Session unregistered by platform because '{event.unregister.details}'")
                 return
 
     except BaseException as err:
         client.session.delete(workspace_name=config_client.workspace, session_id=registered_session.session_id)
-        print(f"Unregistered simulator because {type(err).__name__}: {err}")
+        log.info(f'{"Unregistered simulator because {} ".format(err)}')
+        #print(f"Unregistered simulator because {type(err).__name__}: {err}")
 
 def _step(actions, missedBalls):
 
-        # Get the objects
-        objectBalls = bpy.data.objects["Ball"]
-        objectCart = bpy.data.objects["Cart"]
-
-        # Move the cart with actions (left, right or nothing)
-        # Set currentframe
-
         step_reward = 0
         done = False
-        
-        # Get locations
-        coordinatesBall = objectBalls.matrix_world.to_translation()
-        locBall_y = coordinatesBall[1]
-        locBall_z= coordinatesBall[2]
-        print('Step coordinatesBall', coordinatesBall)
-        print('Step locBall_y', locBall_y)
-        print('Step locBall_z', locBall_z)
-        coordinatesCart = objectCart.matrix_world.to_translation()  
-        locCart = coordinatesCart[1]   
-        print('Step coordinatesCart', coordinatesCart)       
-        print('Step locCart', locCart)
+
+        if actions['action'] == 0: move = mathutils.Vector([0.0, -1.0, 0.0])
+        elif actions['action'] == 1: move = mathutils.Vector([0.0, 0.0, 0.0])
+        else: move = mathutils.Vector([0.0, 1.0, 0.0])
+
+        # Move the cart with actions (left, right or nothing)
+        for window in context.window_manager.windows:
+            screen = window.screen
+            for area in screen.areas:
+                #print(area.type)  PROPERTIES OUTLINER INFO OUTLINER TEXT_EDITOR VIEW_3D
+                if area.type == 'VIEW_3D':
+                    with context.temp_override(window=window, area=area):    
+
+                        obCart = bpy.context.scene.objects["Cart"]       # Get the object
+                        print('obCart location is:', obCart.location)
+                        bpy.context.view_layer.objects.active = obCart   # Make the Cart the active object 
+                        obCart.location = obCart.location + move
+
+                        # Get the objects
+                        objectBalls = bpy.data.objects["Ball"]
+                        objectCart = bpy.data.objects["Cart"]                        
+
+                        # Get the locations
+                        coordinatesBall = objectBalls.matrix_world.to_translation()
+                        locBall_y = coordinatesBall[1]
+                        locBall_z= coordinatesBall[2]
+                        print('Step coordinatesBall', coordinatesBall)
+                        print('Step locBall_y', locBall_y)
+                        print('Step locBall_z', locBall_z)
+                        coordinatesCart = objectCart.matrix_world.to_translation()  
+                        locCart = coordinatesCart[1]   
+                        print('Step coordinatesCart', coordinatesCart)       
+                        print('Step locCart', locCart)
 
         if _isCartCollision(coordinatesBall,coordinatesCart): 
             step_reward = 1
-            _removeBall()
-            _addBall()
+            _launchBalls()
 
         if _isGroundCollision(coordinatesBall): 
             step_reward = -1  
-            _removeBall()
+            _launchBalls()
             missedBalls += 1
             if missedBalls >= 3:
                 done = True       
@@ -226,100 +247,104 @@ def _step(actions, missedBalls):
 
 def _reset(config):
      
-        for window in context.window_manager.windows:
-            screen = window.screen
-            for area in screen.areas:
-                #print(area.type)  PROPERTIES OUTLINER INFO OUTLINER TEXT_EDITOR VIEW_3D
-                if area.type == 'VIEW_3D':
-                    with context.temp_override(window=window, area=area):
-                        # Delete all
-                        bpy.ops.object.select_all(action='SELECT')
-                        bpy.ops.object.delete(use_global=False, confirm=False)
-                        
-                        # Add new ball
-                        _addBall()
-                        
-                        # Add ground and back wall
-                        bpy.ops.mesh.primitive_plane_add(size=2, enter_editmode=False, align='WORLD', location=(0, 0, 0), scale=(1, 1, 0))
-                        bpy.context.object.name = "Ground"
-                        bpy.ops.transform.resize(value=(100, 100, 100), orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', mirror=False, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False, snap=False, snap_elements={'INCREMENT'}, use_snap_project=False, snap_target='CLOSEST', use_snap_self=False, use_snap_edit=False, use_snap_nonedit=False, use_snap_selectable=False)
-                        bpy.ops.rigidbody.object_add()
-                        #bpy.context.object.rigid_body.collision_shape = 'BOX'
-                        #bpy.context.object.rigid_body.type = 'PASSIVE'
-
-
-                        bpy.ops.mesh.primitive_plane_add(size=2, enter_editmode=False, align='WORLD', location=(0, 0, 0), scale=(1, 1, 0))
-                        bpy.context.object.name = "Sky"
-                        bpy.ops.transform.resize(value=(100, 100, 100), orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', mirror=False, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False, snap=False, snap_elements={'INCREMENT'}, use_snap_project=False, snap_target='CLOSEST', use_snap_self=False, use_snap_edit=False, use_snap_nonedit=False, use_snap_selectable=False)    
-                        bpy.ops.transform.rotate(value=1.5708, orient_axis='Y', orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', constraint_axis=(False, True, False), mirror=False, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False, snap=False, snap_elements={'INCREMENT'}, use_snap_project=False, snap_target='CLOSEST', use_snap_self=False, use_snap_edit=False, use_snap_nonedit=False, use_snap_selectable=False)
-                        bpy.ops.transform.translate(value=(10, 0, 0), orient_axis_ortho='X', orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', constraint_axis=(True, False, False), mirror=False, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False, snap=False, snap_elements={'INCREMENT'}, use_snap_project=False, snap_target='CLOSEST', use_snap_self=False, use_snap_edit=False, use_snap_nonedit=False, use_snap_selectable=False)
+    for window in context.window_manager.windows:
+        screen = window.screen
+        for area in screen.areas:
+            #print(area.type)  PROPERTIES OUTLINER INFO OUTLINER TEXT_EDITOR VIEW_3D
+            if area.type == 'VIEW_3D':
+                with context.temp_override(window=window, area=area):
+                    # Delete all
+                    bpy.ops.object.select_all(action='SELECT')
+                    bpy.ops.object.delete(use_global=False, confirm=False)
                     
-                        # Add cart (cube)
-                        bpy.ops.mesh.primitive_cube_add(size=2, enter_editmode=False, align='WORLD', location=(0, 0, 1), scale=(3, 3, 1))
-                        bpy.context.object.name = "Cart"
-                        #bpy.ops.rigidbody.object_add()
-                        #bpy.context.object.rigid_body.collision_shape = 'BOX'
+                    # Add new ball
+                    y = np.random.randint(20, size=1)[0]
+                    bpy.ops.mesh.primitive_uv_sphere_add(enter_editmode=False, align='WORLD', location=(0, y, 16), scale=(1, 1, 1))
+                    bpy.context.object.name = "Ball"
+                    #bpy.context.view_layer.objects.active = obBall   # Make the Cart the active object 
+                    bpy.ops.rigidbody.object_add()
+                    bpy.context.object.rigid_body.collision_shape = 'SPHERE'  
                     
-                        # Add camera
-                        bpy.ops.object.camera_add(enter_editmode=False, align='VIEW', location=(0, 0, 0), rotation=(1.11569, 0.0131949, -2.41231), scale=(1, 1, 1))
-                        bpy.context.object.name = "Camera"
-                        bpy.context.area.spaces.active.region_3d.view_perspective = 'CAMERA'
-                        #bpy.ops.view3d.object_as_camera()
-                        bpy.context.object.rotation_euler[2] = -1.5708
-                        bpy.context.object.rotation_euler[0] = 1.5708
-                        bpy.ops.transform.translate(value=(-50, -0, 6), orient_axis_ortho='X', orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', constraint_axis=(True, False, False), mirror=False, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False, snap=False, snap_elements={'INCREMENT'}, use_snap_project=False, snap_target='CLOSEST', use_snap_self=False, use_snap_edit=False, use_snap_nonedit=False, use_snap_selectable=False)
-                        
-                        # Add sun
-                        bpy.ops.object.light_add(type='SUN', radius=1, align='WORLD', location=(10, 0, 50), scale=(1, 1, 1))
+                    # Add ground and back wall
+                    bpy.ops.mesh.primitive_plane_add(size=2, enter_editmode=False, align='WORLD', location=(0, 0, 0), scale=(1, 1, 0))
+                    bpy.context.object.name = "Ground"
+                    bpy.ops.transform.resize(value=(100, 100, 100), orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', mirror=False, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False, snap=False, snap_elements={'INCREMENT'}, use_snap_project=False, snap_target='CLOSEST', use_snap_self=False, use_snap_edit=False, use_snap_nonedit=False, use_snap_selectable=False)
+                    #bpy.ops.rigidbody.object_add()
+                    #bpy.context.object.rigid_body.collision_shape = 'BOX'
+                    #bpy.context.object.rigid_body.type = 'PASSIVE'
 
-
-                    break
+                    bpy.ops.mesh.primitive_plane_add(size=2, enter_editmode=False, align='WORLD', location=(0, 0, 0), scale=(1, 1, 0))
+                    bpy.context.object.name = "Sky"
+                    bpy.ops.transform.resize(value=(100, 100, 100), orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', mirror=False, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False, snap=False, snap_elements={'INCREMENT'}, use_snap_project=False, snap_target='CLOSEST', use_snap_self=False, use_snap_edit=False, use_snap_nonedit=False, use_snap_selectable=False)    
+                    bpy.ops.transform.rotate(value=1.5708, orient_axis='Y', orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', constraint_axis=(False, True, False), mirror=False, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False, snap=False, snap_elements={'INCREMENT'}, use_snap_project=False, snap_target='CLOSEST', use_snap_self=False, use_snap_edit=False, use_snap_nonedit=False, use_snap_selectable=False)
+                    bpy.ops.transform.translate(value=(10, 0, 0), orient_axis_ortho='X', orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', constraint_axis=(True, False, False), mirror=False, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False, snap=False, snap_elements={'INCREMENT'}, use_snap_project=False, snap_target='CLOSEST', use_snap_self=False, use_snap_edit=False, use_snap_nonedit=False, use_snap_selectable=False)
                 
-            for area in screen.areas:
-                #print(area.type)  PROPERTIES OUTLINER INFO OUTLINER TEXT_EDITOR VIEW_3D
-                if area.type == 'PROPERTIES':
-                    with context.temp_override(window=window, area=area):
-                                    
-                        #Delete all materials
-                        for m in bpy.data.materials:
-                            bpy.data.materials.remove(m)
-
-                        # Create materials            
-                        matCart = bpy.data.materials.new(name="MatCart") #set new material to variable
-                        bpy.data.materials['MatCart'].diffuse_color = (0.8, 0.491085, 0.00577944, 1) #change color  
-                        
-                        matGround = bpy.data.materials.new(name="MatGround") #set new material to variable
-                        bpy.data.materials['MatGround'].diffuse_color = (0.00267726, 0.8, 0.0002749, 1) #change color  
-
-                        matSky = bpy.data.materials.new(name="MatSky") #set new material to variable
-                        bpy.data.materials['MatSky'].diffuse_color = (0.0029881, 0.477195, 0.8, 1) #change color  
-
-                        matBall = bpy.data.materials.new(name="MatBall") #set new material to variable
-                        bpy.data.materials['MatBall'].diffuse_color = (0.8, 0, 0.000847888, 1) #change color  
+                    # Add cart (cube)
+                    bpy.ops.mesh.primitive_cube_add(size=2, enter_editmode=False, align='WORLD', location=(0, 0, 1), scale=(3, 3, 1))
+                    bpy.context.object.name = "Cart"
+                    #bpy.ops.rigidbody.object_add()
+                    #bpy.context.object.rigid_body.collision_shape = 'BOX'
+                
+                    # Add camera
+                    bpy.ops.object.camera_add(enter_editmode=False, align='VIEW', location=(0, 0, 0), rotation=(1.11569, 0.0131949, -2.41231), scale=(1, 1, 1))
+                    bpy.context.object.name = "Camera"
+                    bpy.context.area.spaces.active.region_3d.view_perspective = 'CAMERA'
+                    #bpy.ops.view3d.object_as_camera()
+                    bpy.context.object.rotation_euler[2] = -1.5708
+                    bpy.context.object.rotation_euler[0] = 1.5708
+                    bpy.ops.transform.translate(value=(-50, -0, 6), orient_axis_ortho='X', orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', constraint_axis=(True, False, False), mirror=False, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False, snap=False, snap_elements={'INCREMENT'}, use_snap_project=False, snap_target='CLOSEST', use_snap_self=False, use_snap_edit=False, use_snap_nonedit=False, use_snap_selectable=False)
+                    
+                    # Add sun
+                    bpy.ops.object.light_add(type='SUN', radius=1, align='WORLD', location=(10, 0, 50), scale=(1, 1, 1))
 
 
-                        # rename data block and link material to object
-                        obCart = bpy.context.scene.objects["Cart"]       # Get the object
-                        obCart.data.name = "Cart"
-                        bpy.context.view_layer.objects.active = obCart   # Make the Cart the active object 
-                        obCart.data.materials.append(matCart) #add the material to the object
+                break
+            
+        for area in screen.areas:
+            #print(area.type)  PROPERTIES OUTLINER INFO OUTLINER TEXT_EDITOR VIEW_3D
+            if area.type == 'PROPERTIES':
+                with context.temp_override(window=window, area=area):
                                 
-                        obGround = bpy.context.scene.objects["Ground"]       # Get the object
-                        obGround.data.name = "Ground"
-                        bpy.context.view_layer.objects.active = obGround   # Make the Cart the active object 
-                        obGround.data.materials.append(matGround) #add the material to the object
-                        
-                        obSky = bpy.context.scene.objects["Sky"]       # Get the object
-                        obSky.data.name = "Sky"
-                        bpy.context.view_layer.objects.active = obSky   # Make the Cart the active object 
-                        obSky.data.materials.append(matSky) #add the material to the object
-                        
-                        obBall = bpy.context.scene.objects["Ball"]       # Get the object
-                        obBall.data.name = "Ball"
-                        bpy.context.view_layer.objects.active = obBall   # Make the Cart the active object 
-                        obBall.data.materials.append(matBall) #add the material to the object
+                    bpy.ops.object.select_all(action='DESELECT')
+                    
+                    #Delete all materials
+                    for m in bpy.data.materials:
+                        bpy.data.materials.remove(m)
 
-                    break
+                    # Create materials            
+                    matCart = bpy.data.materials.new(name="MatCart") #set new material to variable
+                    bpy.data.materials['MatCart'].diffuse_color = (0.8, 0.491085, 0.00577944, 1) #change color  
+                    
+                    matGround = bpy.data.materials.new(name="MatGround") #set new material to variable
+                    bpy.data.materials['MatGround'].diffuse_color = (0.00267726, 0.8, 0.0002749, 1) #change color  
+
+                    matSky = bpy.data.materials.new(name="MatSky") #set new material to variable
+                    bpy.data.materials['MatSky'].diffuse_color = (0.0029881, 0.477195, 0.8, 1) #change color  
+
+                    matBall = bpy.data.materials.new(name="MatBall") #set new material to variable
+                    bpy.data.materials['MatBall'].diffuse_color = (0.8, 0, 0.000847888, 1) #change color  
+
+                    # rename data block and link material to object
+                    obCart = bpy.context.scene.objects["Cart"]       # Get the object
+                    obCart.data.name = "Cart"
+                    bpy.context.view_layer.objects.active = obCart   # Make the Cart the active object 
+                    obCart.data.materials.append(matCart) #add the material to the object
+                            
+                    obGround = bpy.context.scene.objects["Ground"]       # Get the object
+                    obGround.data.name = "Ground"
+                    bpy.context.view_layer.objects.active = obGround   # Make the Cart the active object 
+                    obGround.data.materials.append(matGround) #add the material to the object
+                    
+                    obSky = bpy.context.scene.objects["Sky"]       # Get the object
+                    obSky.data.name = "Sky"
+                    bpy.context.view_layer.objects.active = obSky   # Make the Cart the active object 
+                    obSky.data.materials.append(matSky) #add the material to the object
+                    
+                    obBall = bpy.context.scene.objects["Ball"]       # Get the object
+                    obBall.data.name = "Ball"      
+                    obBall.data.materials.append(matBall) #add the material to the object
+                
+                break
                 
         # Get the objects
         objectBalls = bpy.data.objects["Ball"]
@@ -341,27 +366,22 @@ def _reset(config):
         return new_state
 
 
-def _addBall():
-
-    for window in context.window_manager.windows:
-        screen = window.screen
-        for area in screen.areas:
-            #print(area.type)  PROPERTIES OUTLINER INFO OUTLINER TEXT_EDITOR VIEW_3D
-            if area.type == 'VIEW_3D':
+def _launchBalls():
     
-                # Randomize position
-                y = np.random.randint(20, size=1)[0]
-                bpy.ops.mesh.primitive_uv_sphere_add(enter_editmode=False, align='WORLD', location=(0, y, 16), scale=(1, 1, 1))
-                bpy.context.object.name = "Ball"
-                bpy.ops.rigidbody.object_add()
-                bpy.context.object.rigid_body.collision_shape = 'SPHERE'
+    bpy.data.objects["Ball"].select_set(True)
+    bpy.ops.object.delete(use_global=False, confirm=False)
 
+    # Add new ball
+    y = np.random.randint(20, size=1)[0]
+    bpy.ops.mesh.primitive_uv_sphere_add(enter_editmode=False, align='WORLD', location=(0, y, 16), scale=(1, 1, 1))
+    bpy.context.object.name = "Ball"
 
-def _removeBall():
-    
-    # Delete objects
-    objectBalls = bpy.data.objects["Ball"]  
-    objectBalls.delete()
+    bpy.ops.rigidbody.object_add()
+    bpy.context.object.rigid_body.collision_shape = 'SPHERE'  
+
+    obBall = bpy.context.scene.objects["Ball"]
+    matBall = bpy.data.materials["MatBall"]
+    obBall.data.materials.append(matBall)                               
 
 
 def _isCartCollision(loc, locCart):
@@ -383,15 +403,26 @@ def _isGroundCollision(loc):
 
     return collided
 
+def _generate_gif(path_name, frames):
+
+    for idx, frame_idx in enumerate(frames): 
+        frames[idx] = resize(frame_idx, (576, 1024,3), preserve_range=True, order=0).astype(np.uint8)
+        #frames[idx] = frame_idx.astype(np.uint8)
+
+    imageio.mimsave(path_name, frames, duration=1/30)        
+
 
 
 if __name__ == '__main__':
 
+    now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    
     # Instantiate the Queue object to manage all actions on BPY
     q_2blender = queue.Queue()
     q_2bonsai = queue.Queue()
 
-    print('Thread simulate starting')
+    log.info("Thread simulate starting")
+    #print('Thread simulate starting')
     threadSimulate = threading.Thread(target=thread_simulate, args=(q_2blender,q_2bonsai,))
     threadSimulate.start()
 
@@ -409,63 +440,103 @@ if __name__ == '__main__':
 
     missedBalls = 0
     truncated = False
+    done =False
+    episode_reward = 0
+    max_reward = 0
 
-    while True:
+    frames = []
 
-        if q_2blender.empty() is False:
+    try:
 
-            print('q_2blender - Get msgFromBonsai')
-            msgFromBonsai = q_2blender.get()
-            print('q_2blender - msgFromBonsai is: ',msgFromBonsai)
+        while run_thread:
 
-            if msgFromBonsai[0] == 'Reset_Blender':
-                print('Start Reset_Blender')
-                config = msgFromBonsai[1]
-                print('config is: ', config)
-                scn.frame_set(scn.frame_start)
-                missedBalls = 0
-                truncated = False
-                states = _reset(config)  
-                q_2blender.task_done()
+            if q_2blender.empty() is False:
 
-                # Add message in q_2bonsai with states
-                print('q_2bonsai - Put Reset_Bonsai')
-                msg2Bonsai = ('Reset_Bonsai', {'states':states})
-                q_2bonsai.put(msg2Bonsai)
-                print('q_2bonsai - End Put Reset_Bonsai')
-                q_2bonsai.join()    
-                print('End Reset_Blender')          
-            
-            if msgFromBonsai[0] == 'Step_Blender':
-                print('Start Step_Blender')
-                actions = msgFromBonsai[1]
-                print('actions is: ', actions)
-                currentFrame += 1
-                scn.frame_set(currentFrame)
-                new_state, step_reward, done, info = _step(actions, missedBalls)
+                log.info("q_2blender - Get msgFromBonsai")
+                #print('q_2blender - Get msgFromBonsai')
+                msgFromBonsai = q_2blender.get()
+                log.info(f'{"q_2blender - msgFromBonsai is: {} ".format(msgFromBonsai)}')
+                #print('q_2blender - msgFromBonsai is: ',msgFromBonsai)
+
+                if msgFromBonsai[0] == 'Reset_Blender':
+                    log.info("Start Reset_Blender")
+                    #print('Start Reset_Blender')
+                    config = msgFromBonsai[1]
+                    log.info(f'{"config is: {} ".format(config)}')
+                    #print('config is: ', config)
+                    scn.frame_set(scn.frame_start)
+                    missedBalls = 0
+                    truncated = False
+                    done = False
+                    episode_reward = 0
+                    frames = []
+                    states = _reset(config)  
+                    q_2blender.task_done()
+
+                    # Add message in q_2bonsai with states
+                    log.info("q_2bonsai - Put Reset_Bonsai")
+                    #print('q_2bonsai - Put Reset_Bonsai')
+                    msg2Bonsai = ('Reset_Bonsai', {'states':states})
+                    q_2bonsai.put(msg2Bonsai)
+                    log.info("q_2bonsai - End Put Reset_Bonsai")
+                    #print('q_2bonsai - End Put Reset_Bonsai')
+                    q_2bonsai.join()    
+                    log.info("End Reset_Blender")
+                    #print('End Reset_Blender')          
                 
-                if info['missedBalls'] > missedBalls: 
-                    missedBalls = info['missedBalls']
-                    if missedBalls == 3: done = True
-                if currentFrame > scn.frame_end: 
-                    truncated = True 
-                
-                q_2blender.task_done()                      
+                if msgFromBonsai[0] == 'Step_Blender':
+                    log.info("Start Step_Blender")
+                    #print('Start Step_Blender')
+                    actions = msgFromBonsai[1]
+                    log.info(f'{"actions is: {} ".format(actions)}')
+                    #print('actions is: ', actions)
+                    currentFrame += 1
+                    scn.frame_set(currentFrame)
+                    new_state, step_reward, done, info = _step(actions, missedBalls)
+                    episode_reward += step_reward
+                    # Save the render
+                    bpy.ops.render.render( write_still=True )
+                    image = cv2.imread(simulationFile)
+                    frames.append(image)
+                    
+                    if info['missedBalls'] > missedBalls: 
+                        missedBalls = info['missedBalls']
+                        if missedBalls == 3: 
+                            done = True
+                            if max_reward < episode_reward:
+                                max_reward = episode_reward
+                                path_name = SAVE_DIR + '/' + now + '_Blender_Balls_' + str(episode_reward) + '.gif'
+                                _generate_gif(path_name, frames) 
 
-                # Add message in q_2bonsai with new_state, step_reward, done and truncated
-                print('q_2bonsai - Put Step_Bonsai')
-                msg2Bonsai = ('Step_Bonsai', {'new_state':new_state, 'step_reward':step_reward, 'done':done, 'truncated':truncated  })
-                q_2bonsai.put(msg2Bonsai) 
-                print('q_2bonsai - End Put Step_Bonsai')
-                q_2bonsai.join()
-                print('End Step_Blender')                      
-                
+                    if currentFrame > scn.frame_end: 
+                        truncated = True 
+                        done = True #As truncated is not implemented
+                    
+                    q_2blender.task_done()                      
+
+                    # Add message in q_2bonsai with new_state, step_reward, done and truncated
+                    log.info("q_2bonsai - Put Step_Bonsai")
+                    #print('q_2bonsai - Put Step_Bonsai')
+                    msg2Bonsai = ('Step_Bonsai', {'new_state':new_state, 'step_reward':step_reward, 'done':done, 'truncated':truncated  })
+                    q_2bonsai.put(msg2Bonsai) 
+                    log.info("q_2bonsai - End Put Step_Bonsai")
+                    #print('q_2bonsai - End Put Step_Bonsai')
+                    q_2bonsai.join()
+                    log.info("End Step_Blender")
+                    #print('End Step_Blender')                      
+                    
+    except KeyboardInterrupt:
+
+        run_thread = False
+        print('Process interupted')
+        exit()
+
+        raise
 
 
 
 
-
-    
+        
 
 
 
