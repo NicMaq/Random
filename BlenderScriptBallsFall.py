@@ -200,34 +200,26 @@ def _step(actions, missedBalls):
         elif actions['action'] == 1: move = mathutils.Vector([0.0, 0.0, 0.0])
         else: move = mathutils.Vector([0.0, 1.0, 0.0])
 
-        # Move the cart with actions (left, right or nothing)
-        for window in context.window_manager.windows:
-            screen = window.screen
-            for area in screen.areas:
-                #print(area.type)  PROPERTIES OUTLINER INFO OUTLINER TEXT_EDITOR VIEW_3D
-                if area.type == 'VIEW_3D':
-                    with context.temp_override(window=window, area=area):    
+        obCart = bpy.context.scene.objects["Cart"]       # Get the object
+        print('obCart location is:', obCart.location)
+        bpy.context.view_layer.objects.active = obCart   # Make the Cart the active object 
+        obCart.location = obCart.location + move
 
-                        obCart = bpy.context.scene.objects["Cart"]       # Get the object
-                        print('obCart location is:', obCart.location)
-                        bpy.context.view_layer.objects.active = obCart   # Make the Cart the active object 
-                        obCart.location = obCart.location + move
+        # Get the objects
+        objectBalls = bpy.data.objects["Ball"]
+        objectCart = bpy.data.objects["Cart"]                        
 
-                        # Get the objects
-                        objectBalls = bpy.data.objects["Ball"]
-                        objectCart = bpy.data.objects["Cart"]                        
-
-                        # Get the locations
-                        coordinatesBall = objectBalls.matrix_world.to_translation()
-                        locBall_y = coordinatesBall[1]
-                        locBall_z= coordinatesBall[2]
-                        print('Step coordinatesBall', coordinatesBall)
-                        print('Step locBall_y', locBall_y)
-                        print('Step locBall_z', locBall_z)
-                        coordinatesCart = objectCart.matrix_world.to_translation()  
-                        locCart = coordinatesCart[1]   
-                        print('Step coordinatesCart', coordinatesCart)       
-                        print('Step locCart', locCart)
+        # Get the locations
+        coordinatesBall = objectBalls.matrix_world.to_translation()
+        locBall_y = coordinatesBall[1]
+        locBall_z= coordinatesBall[2]
+        print('Step coordinatesBall', coordinatesBall)
+        print('Step locBall_y', locBall_y)
+        print('Step locBall_z', locBall_z)
+        coordinatesCart = objectCart.matrix_world.to_translation()  
+        locCart = coordinatesCart[1]   
+        print('Step coordinatesCart', coordinatesCart)       
+        print('Step locCart', locCart)
 
         if _isCartCollision(coordinatesBall,coordinatesCart): 
             step_reward = 1
@@ -491,6 +483,7 @@ if __name__ == '__main__':
                     log.info(f'{"actions is: {} ".format(actions)}')
                     #print('actions is: ', actions)
                     currentFrame += 1
+                    log.info(f'{"currentFrame is: {} ".format(currentFrame)}')
                     scn.frame_set(currentFrame)
                     new_state, step_reward, done, info = _step(actions, missedBalls)
                     episode_reward += step_reward
