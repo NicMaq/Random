@@ -73,7 +73,10 @@ class SimulatorModel:
         # return states
         returned_dict = self._gym_to_state(states, 0.0, False)
         
-        return returned_dict
+        return { 
+            'sim_halted': False,
+            'key': returned_dict
+        }
 
 
     def step(self, action) -> Dict[str, Any]:
@@ -93,36 +96,22 @@ class SimulatorModel:
         print('q_2bonsai - Get Step_Bonsai')
         msgFromBlender = self.q_2bonsai.get()
         print('msgFromBlender is: ', msgFromBlender)
-        dataBlender = msgFromBlender[1]
+        listFromBLender = msgFromBlender[1]
         self.q_2bonsai.task_done()
         print('q_2bonsai - End Get Step_Bonsai')
-        
-        #{'new_state': [0.0, 5.0, 15.99063777923584], 'step_reward': 0, 'done': False, 'truncated': False}
-        print('dataBlender', dataBlender) 
-        new_state = dataBlender['new_state']
-        step_reward = dataBlender['step_reward']
-        done = dataBlender['done']
 
-        returned_dict = self._gym_to_state(new_state, step_reward, done) 
+        # Read next_state, step_reward, done, truncated, info        
+        #next_state, step_reward, done, truncated, info = self._step(action['action']) # next_state, step_reward, done, info
+        returned_dict = {} #self._gym_to_state(next_state, step_reward, done)
+        #if self.args.debug: 
+        #print('next_state is: ', next_state )
+        #print('step_reward is: ', step_reward )
 
-        return returned_dict
+        return {
+            'sim_halted': False,
+            'key': returned_dict
+        }   
 
-    '''
-    {
-    "sequenceId": 2,
-    "contains": "state",
-    "state": {
-        "cart_pos": 0,
-        "ball_y": 3,
-        "ball_z": 16,
-        "_gym_reward": 0,
-        "_gym_terminal": 0
-    },
-    "idle": null,
-    "halted": false,
-    "error": null
-    }
-    '''
 
     def _gym_to_state(self, next_state, step_reward, done ):
         state = {
@@ -191,21 +180,18 @@ def _step(actions, missedBalls):
 
         # Move the cart with actions (left, right or nothing)
         # Set currentframe
-
-        step_reward = 0
-        done = False
         
         # Get locations
         coordinatesBall = objectBalls.matrix_world.to_translation()
         locBall_y = coordinatesBall[1]
         locBall_z= coordinatesBall[2]
-        print('Step coordinatesBall', coordinatesBall)
-        print('Step locBall_y', locBall_y)
-        print('Step locBall_z', locBall_z)
+        print('Reset coordinatesBall', coordinatesBall)
+        print('Reset locBall_y', locBall_y)
+        print('Reset locBall_z', locBall_z)
         coordinatesCart = objectCart.matrix_world.to_translation()  
         locCart = coordinatesCart[1]   
-        print('Step coordinatesCart', coordinatesCart)       
-        print('Step locCart', locCart)
+        print('Reset coordinatesCart', coordinatesCart)       
+        print('Reset locCart', locCart)
 
         if _isCartCollision(coordinatesBall,coordinatesCart): 
             step_reward = 1
@@ -364,7 +350,7 @@ def _removeBall():
     objectBalls.delete()
 
 
-def _isCartCollision(loc, locCart):
+def _isCartCollision(self, loc, locCart):
 
     collided = False
     
@@ -385,81 +371,103 @@ def _isGroundCollision(loc):
 
 
 
+class BonsaiConnector(bpy.types.Operator):
+    bl_idname = "object.modal_bonsai_connector"
+    bl_label = "Bonsai Connector"
+
+    def __init__(self):
+        print("Start")
+        # Instantiate the Queue object to manage all actions on BPY
+        self.q_2blender = queue.Queue()
+        self.q_2bonsai = queue.Queue()
+
+        print('Thread simulate starting')
+        threadSimulate = threading.Thread(target=thread_simulate, args=(self.q_2blender,self.q_2bonsai,))
+        threadSimulate.start()
+
+        # prepare a scene
+        self.scn = bpy.context.scene
+        self.scn.frame_start = 1
+        self.scn.frame_end = 500
+
+        # Set first frame
+        currentFrame = self.scn.frame_start
+        self.scn.frame_set(currentFrame)
+
+        simulationFile = "{}/simuBlender.png".format(SAVE_DIR)
+        self.scn.render.filepath = simulationFile    
+
+        self.connect_bonsai = False
+
+    def __del__(self):
+        print("End")
+
+    def execute(self, context):
+        while  self.connect_bonsai:
+
+            if self.q_2blender.empty() is False:
+
+                print('q_2blender - Get msgFromBonsai')
+                msgFromBonsai = self.q_2blender.get()
+                print('q_2blender - msgFromBonsai is: ',msgFromBonsai)
+
+                if msgFromBonsai[0] == 'Reset_Blender':
+                    print('Start Reset_Blender')
+                    config = msgFromBonsai[1]
+                    print('config is: ', config)
+                    self.scn.frame_set(self.scn.frame_start)
+                    states = _reset(config)  
+                    self.q_2blender.task_done()
+
+                    # Add message in q_2bonsai with states
+                    print('q_2bonsai - Put Reset_Bonsai')
+                    msg2Bonsai = ('Reset_Bonsai', {'states':states})
+                    self.q_2bonsai.put(msg2Bonsai)
+                    print('q_2bonsai - End Put Reset_Bonsai')
+                    self.q_2bonsai.join()    
+                    print('End Reset_Blender')          
+                
+                if msgFromBonsai[0] == 'Step_Blender':
+                    actions = msgFromBonsai[1]
+                    currentFrame += 1
+                    self.scn.frame_set(currentFrame)
+                    new_state, step_reward, done, info = _step(actions)
+                    if currentFrame > self.scn.frame_end: 
+                        truncated = True 
+
+                    # Add message in queue to ask Blender to reset
+                    print('Put Step_Bonsai')
+                    msg2Bonsai = ('Step_Bonsai', {'new_state':states, 'step_reward':step_reward, 'done':done, 'truncated':truncated  })
+                    self.q_bpy.put(msg2Bonsai)                       
+                
+        return {'FINISHED'}
+
+    def modal(self, context, event):
+        if event.type in {'ESC'}:  # Cancel
+            self.connect_bonsai = False
+            return {'CANCELLED'}
+
+        return {'RUNNING_MODAL'}
+
+    def invoke(self, context, event):
+        self.connect_bonsai = True
+        self.execute(context)
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+    
+
+
+
 if __name__ == '__main__':
 
-    # Instantiate the Queue object to manage all actions on BPY
-    q_2blender = queue.Queue()
-    q_2bonsai = queue.Queue()
+    bpy.utils.register_class(BonsaiConnector)
 
-    print('Thread simulate starting')
-    threadSimulate = threading.Thread(target=thread_simulate, args=(q_2blender,q_2bonsai,))
-    threadSimulate.start()
+    # Invoke the connector 
+    bpy.ops.object.modal_bonsai_connector('INVOKE_DEFAULT')
 
-    # prepare a scene
-    scn = bpy.context.scene
-    scn.frame_start = 1
-    scn.frame_end = 500
 
-    # Set first frame
-    currentFrame = scn.frame_start
-    scn.frame_set(currentFrame)
 
-    simulationFile = "{}/simuBlender.png".format(SAVE_DIR)
-    scn.render.filepath = simulationFile    
 
-    missedBalls = 0
-    truncated = False
-
-    while True:
-
-        if q_2blender.empty() is False:
-
-            print('q_2blender - Get msgFromBonsai')
-            msgFromBonsai = q_2blender.get()
-            print('q_2blender - msgFromBonsai is: ',msgFromBonsai)
-
-            if msgFromBonsai[0] == 'Reset_Blender':
-                print('Start Reset_Blender')
-                config = msgFromBonsai[1]
-                print('config is: ', config)
-                scn.frame_set(scn.frame_start)
-                missedBalls = 0
-                truncated = False
-                states = _reset(config)  
-                q_2blender.task_done()
-
-                # Add message in q_2bonsai with states
-                print('q_2bonsai - Put Reset_Bonsai')
-                msg2Bonsai = ('Reset_Bonsai', {'states':states})
-                q_2bonsai.put(msg2Bonsai)
-                print('q_2bonsai - End Put Reset_Bonsai')
-                q_2bonsai.join()    
-                print('End Reset_Blender')          
-            
-            if msgFromBonsai[0] == 'Step_Blender':
-                print('Start Step_Blender')
-                actions = msgFromBonsai[1]
-                print('actions is: ', actions)
-                currentFrame += 1
-                scn.frame_set(currentFrame)
-                new_state, step_reward, done, info = _step(actions, missedBalls)
-                
-                if info['missedBalls'] > missedBalls: 
-                    missedBalls = info['missedBalls']
-                    if missedBalls == 3: done = True
-                if currentFrame > scn.frame_end: 
-                    truncated = True 
-                
-                q_2blender.task_done()                      
-
-                # Add message in q_2bonsai with new_state, step_reward, done and truncated
-                print('q_2bonsai - Put Step_Bonsai')
-                msg2Bonsai = ('Step_Bonsai', {'new_state':new_state, 'step_reward':step_reward, 'done':done, 'truncated':truncated  })
-                q_2bonsai.put(msg2Bonsai) 
-                print('q_2bonsai - End Put Step_Bonsai')
-                q_2bonsai.join()
-                print('End Step_Blender')                      
-                
 
 
 
