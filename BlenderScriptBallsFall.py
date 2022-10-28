@@ -15,11 +15,11 @@ import cv2
 from datetime import datetime
 
 # Manage communication between threads
-# msg2Blender = ('Reset_Blender', {'nBalls':1})
 import queue
 
-import site
-site.addsitedir('/home/nicolas/Workspace/ml/env310/lib/python3.10/site-packages')
+if platform.system() == 'Linux':
+    import site
+    site.addsitedir('/home/nicolas/Workspace/ml/env310/lib/python3.10/site-packages')
 
 from microsoft_bonsai_api.simulator.client import BonsaiClient, BonsaiClientConfig
 from microsoft_bonsai_api.simulator.generated.models import SimulatorInterface, SimulatorState, SimulatorSessionResponse
