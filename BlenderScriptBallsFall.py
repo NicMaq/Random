@@ -3,6 +3,7 @@ from bpy import context
 
 import numpy as np
 import os
+import platform
 import logging
 import time
 import threading
@@ -44,8 +45,14 @@ registered_session: SimulatorSessionResponse = client.session.create(workspace_n
 print(f"Registered simulator. {registered_session.session_id}")
 
 
-#SAVE_DIR = '/home/nicolas/Workspace/ml/logs/FallingBalls' #Ubuntu
-SAVE_DIR = '/Users/nicolas/Workspace/ml/logs/FallingBalls' #MacOS
+#>>> platform.system()
+#Linux Darwin(MacOS) Windows
+if platform.system() == 'Linux':
+    SAVE_DIR = '/home/nicolas/Workspace/ml/logs/FallingBalls' #Ubuntu
+elif platform.system() == 'Darwin':
+    SAVE_DIR = '/Users/nicolas/Workspace/ml/logs/FallingBalls' #MacOS
+else:
+    SAVE_DIR = 'C:\Users\nmaquaire\Workspace\ml\logs\FallingBalls' #Windows
 
 #Parameters
 nBalls = 1
