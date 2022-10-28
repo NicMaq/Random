@@ -1,6 +1,5 @@
 import bpy
 from bpy import context
-
 import numpy as np
 import os
 import platform
@@ -8,22 +7,23 @@ import logging
 import time
 import threading
 import mathutils
+from typing import NamedTuple, Dict, Any
+from datetime import datetime
+import queue
+
+print('platform is ',platform.system())
+if platform.system() == 'Linux':
+    print('Adding path')
+    import site
+    site.addsitedir('/home/nicolas/Workspace/ml/env310/lib/python3.10/site-packages')
+
 import imageio
 from skimage.transform import rescale, resize, downscale_local_mean
 import cv2
 
-from datetime import datetime
-
-# Manage communication between threads
-import queue
-
-if platform.system() == 'Linux':
-    import site
-    site.addsitedir('/home/nicolas/Workspace/ml/env310/lib/python3.10/site-packages')
-
 from microsoft_bonsai_api.simulator.client import BonsaiClient, BonsaiClientConfig
 from microsoft_bonsai_api.simulator.generated.models import SimulatorInterface, SimulatorState, SimulatorSessionResponse
-from typing import NamedTuple, Dict, Any
+
 
 log = logging.getLogger("blender_simulator")
 log.setLevel(logging.INFO)
