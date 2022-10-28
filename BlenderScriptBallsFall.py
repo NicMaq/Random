@@ -48,8 +48,6 @@ print(f"Registered simulator. {registered_session.session_id}")
 SAVE_DIR = '/Users/nicolas/Workspace/ml/logs/FallingBalls' #MacOS
 
 #Parameters
-heightFrame = 80
-widthFrame = 80
 nBalls = 1
 run_thread = True
 
@@ -191,7 +189,11 @@ def thread_simulate(q_2blender, q_2bonsai):
         log.info(f'{"Unregistered simulator because {} ".format(err)}')
         #print(f"Unregistered simulator because {type(err).__name__}: {err}")
 
+
+
 def _step(actions, missedBalls):
+
+        _printActiveAndSelectedObjects('start step')
 
         step_reward = 0
         done = False
@@ -216,10 +218,13 @@ def _step(actions, missedBalls):
         print('Step coordinatesBall', coordinatesBall)
         print('Step locBall_y', locBall_y)
         print('Step locBall_z', locBall_z)
-        coordinatesCart = objectCart.matrix_world.to_translation()  
+        coordinatesCart = objectCart.matrix_world.to_translation()
         locCart = coordinatesCart[1]   
         print('Step coordinatesCart', coordinatesCart)       
         print('Step locCart', locCart)
+
+        bpy.context.view_layer.objects.active = None
+        bpy.ops.object.select_all(action='DESELECT')
 
         if _isCartCollision(coordinatesBall,coordinatesCart): 
             step_reward = 1
@@ -235,9 +240,13 @@ def _step(actions, missedBalls):
         new_state = [locCart, locBall_y, locBall_z]
         info = {'missedBalls': missedBalls}
 
+        _printActiveAndSelectedObjects('end step')
+
         return new_state, step_reward, done, info
 
 def _reset(config):
+
+    _printActiveAndSelectedObjects('start reset')
      
     for window in context.window_manager.windows:
         screen = window.screen
@@ -288,6 +297,9 @@ def _reset(config):
                     
                     # Add sun
                     bpy.ops.object.light_add(type='SUN', radius=1, align='WORLD', location=(10, 0, 50), scale=(1, 1, 1))
+                    
+                    bpy.context.view_layer.objects.active = None
+                    bpy.ops.object.select_all(action='DESELECT')
 
 
                 break
@@ -297,7 +309,6 @@ def _reset(config):
             if area.type == 'PROPERTIES':
                 with context.temp_override(window=window, area=area):
                                 
-                    bpy.ops.object.select_all(action='DESELECT')
                     
                     #Delete all materials
                     for m in bpy.data.materials:
@@ -319,22 +330,25 @@ def _reset(config):
                     # rename data block and link material to object
                     obCart = bpy.context.scene.objects["Cart"]       # Get the object
                     obCart.data.name = "Cart"
-                    bpy.context.view_layer.objects.active = obCart   # Make the Cart the active object 
+                    #bpy.context.view_layer.objects.active = obCart   # Make the Cart the active object 
                     obCart.data.materials.append(matCart) #add the material to the object
                             
                     obGround = bpy.context.scene.objects["Ground"]       # Get the object
                     obGround.data.name = "Ground"
-                    bpy.context.view_layer.objects.active = obGround   # Make the Cart the active object 
+                    #bpy.context.view_layer.objects.active = obGround   # Make the Cart the active object 
                     obGround.data.materials.append(matGround) #add the material to the object
                     
                     obSky = bpy.context.scene.objects["Sky"]       # Get the object
                     obSky.data.name = "Sky"
-                    bpy.context.view_layer.objects.active = obSky   # Make the Cart the active object 
+                    #bpy.context.view_layer.objects.active = obSky   # Make the Cart the active object 
                     obSky.data.materials.append(matSky) #add the material to the object
                     
                     obBall = bpy.context.scene.objects["Ball"]       # Get the object
                     obBall.data.name = "Ball"      
                     obBall.data.materials.append(matBall) #add the material to the object
+                    
+                    bpy.context.view_layer.objects.active = None
+                    bpy.ops.object.select_all(action='DESELECT')
                 
                 break
                 
@@ -355,10 +369,15 @@ def _reset(config):
         print('Reset locCart', locCart)
         
         new_state = [locCart, locBall_y, locBall_z]
+
+        _printActiveAndSelectedObjects('end reset')
+
         return new_state
 
 
 def _launchBalls():
+
+    _printActiveAndSelectedObjects('start launch')
     
     bpy.data.objects["Ball"].select_set(True)
     bpy.ops.object.delete(use_global=False, confirm=False)
@@ -373,8 +392,12 @@ def _launchBalls():
 
     obBall = bpy.context.scene.objects["Ball"]
     matBall = bpy.data.materials["MatBall"]
-    obBall.data.materials.append(matBall)                               
+    obBall.data.materials.append(matBall) 
 
+    bpy.context.view_layer.objects.active = None
+    bpy.ops.object.select_all(action='DESELECT')                            
+
+    _printActiveAndSelectedObjects('end launch')
 
 def _isCartCollision(loc, locCart):
 
@@ -401,8 +424,16 @@ def _generate_gif(path_name, frames):
         frames[idx] = resize(frame_idx, (576, 1024,3), preserve_range=True, order=0).astype(np.uint8)
         #frames[idx] = frame_idx.astype(np.uint8)
 
-    imageio.mimsave(path_name, frames, duration=1/30)        
+    imageio.mimsave(path_name, frames, duration=1/30)   
 
+
+def _printActiveAndSelectedObjects(where):   
+
+    selected = bpy.context.selected_objects
+    print(f'{"{} selected objects are: {}".format(where, selected)}')
+
+    activated = bpy.context.active_object
+    print(f'{"{} active objects are: {}".format(where, activated)}')
 
 
 if __name__ == '__main__':
@@ -420,6 +451,7 @@ if __name__ == '__main__':
 
     # prepare a scene
     scn = bpy.context.scene
+    bpy.context.window.scene = scn
     scn.frame_start = 1
     scn.frame_end = 500
 
@@ -436,6 +468,8 @@ if __name__ == '__main__':
     episode_reward = 0
     max_reward = 0
 
+    #config = {'nBalls': 1}
+    #states = _reset(config)
     frames = []
 
     try:
