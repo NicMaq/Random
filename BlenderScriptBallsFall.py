@@ -48,11 +48,14 @@ print(f"Registered simulator. {registered_session.session_id}")
 #>>> platform.system()
 #Linux Darwin(MacOS) Windows
 if platform.system() == 'Linux':
+    log.info("Using Linux path")
     SAVE_DIR = '/home/nicolas/Workspace/ml/logs/FallingBalls' #Ubuntu
 elif platform.system() == 'Darwin':
+    log.info("Using MacOS path")
     SAVE_DIR = '/Users/nicolas/Workspace/ml/logs/FallingBalls' #MacOS
 else:
-    SAVE_DIR = 'C:\Users\nmaquaire\Workspace\ml\logs\FallingBalls' #Windows
+    log.info("Using Windows path")
+    SAVE_DIR = 'C:/Users/nmaquaire/Workspace/ml/logs/FallingBalls' #Windows
 
 #Parameters
 nBalls = 1
