@@ -178,6 +178,10 @@ def _initScene():
                 if area.type == 'VIEW_3D':
                     with context.temp_override(window=window, area=area):
                         
+                        col = bpy.data.collections["Hidden"]
+                        for obj in col.objects:
+                            obj.data.materials.clear()        
+                        
                         bpy.ops.object.select_all(action="SELECT")
                         obTCart = bpy.context.scene.objects["templateCart"]
                         obTCart.select_set(False)
@@ -225,13 +229,16 @@ def _initScene():
                         obBall = bpy.data.objects.new('Ball', obSkull.data)
                         bpy.data.collections["Collection"].objects.link(obBall)
                         
-                        y = np.random.randint(40, size=1)[0] - 20
+                        y = np.random.randint(30, size=1)[0] - 15
                         obBall.location.x = 0
                         obBall.location.y = y
                         obBall.location.z = 16
                         bpy.context.view_layer.objects.active = obBall   # Make the Cart the active object 
                         bpy.ops.rigidbody.object_add()
-                        bpy.context.object.rigid_body.collision_shape = 'SPHERE'                      
+                        bpy.context.object.rigid_body.collision_shape = 'MESH' 
+                        
+                        bpy.ops.object.select_all(action='DESELECT')  
+                        bpy.context.view_layer.objects.active = None                                            
                         
                         break
 
@@ -245,8 +252,8 @@ def _initScene():
                         
                         #Delete all materials
                         for m in bpy.data.materials:
-                            bpy.data.materials.remove(m)                    
-
+                            bpy.data.materials.remove(m)        
+                            
                         # Create materials            
                         matCart = bpy.data.materials.new(name="MatCart") #set new material to variable
                         bpy.data.materials['MatCart'].diffuse_color = (0.8, 0.491085, 0.00577944, 1) #change color  
@@ -277,7 +284,7 @@ def _initScene():
                         obSky.data.materials.append(matSky) #add the material to the object
                         
                         obBall = bpy.context.scene.objects["Ball"]       # Get the object
-                        obBall.data.name = "Ball"      
+                        obBall.data.name = "Ball"    
                         obBall.data.materials.append(matBall) #add the material to the object   
                         
                         bpy.ops.object.select_all(action='DESELECT')  
@@ -399,10 +406,12 @@ def _isCartCollision(loc, locCart):
 
     collided = False
     
-    if loc[1] <= (locCart[1] + 1) and loc[1] >= (locCart[1] - 1) and (loc[2] - 0.5) <= locCart[2] :
+    if loc[1] <= (locCart[1] + 3) and loc[1] >= (locCart[1] - 3) and loc[2] <= (locCart[2]+ 1.5) :
         collided = True
 
-    log.info(f'{"_isCartCollision is: {} ".format(collided)}')
+
+    log.info(f'{"_isCartCollision is {} - locCart[1] is {} - locCart[2] is {}".format(collided,locCart[1] , locCart[2])}')
+    log.info(f'{"loc[1] is {} - loc[2] is {}".format(loc[1],loc[2])}')
 
     return collided
 
@@ -467,7 +476,7 @@ if __name__ == '__main__':
     scn = bpy.context.scene
     bpy.context.window.scene = scn
     scn.frame_start = 0
-    scn.frame_end = 500
+    scn.frame_end = 70
 
     # Set first frame
     currentFrame = scn.frame_start
@@ -546,7 +555,6 @@ if __name__ == '__main__':
 
                     frames.append(image.copy())
 
-
                     if info['collided']:
                         currentFrame = scn.frame_start
                         scn.frame_set(currentFrame)                        
@@ -563,15 +571,23 @@ if __name__ == '__main__':
                                 path_name = SAVE_DIR + '/' + now + '_Blender_Balls_' + str(episode_reward) + '.gif'
                                 frames_gif = frames.copy()
                                 threadGif = threading.Thread(target=thread_gif, args=(path_name,frames_gif,))
-                                threadGif.start() 
+                                threadGif.start()
+
+                    if episode_reward >= 8 and max_reward == -10: 
+
+                        path_name = SAVE_DIR + '/' + now + '_Blender_Balls_' + str(episode_reward) + '.gif'
+                        frames_gif = frames.copy()
+                        threadGif = threading.Thread(target=thread_gif, args=(path_name,frames_gif,))
+                        threadGif.start()                                 
 
                     if currentFrame > scn.frame_end: 
                         truncated = True 
-                        #done = True #As truncated is not implemented
+                        done = True #As truncated is not implemented
                     
                     q_2blender.task_done()                      
 
                     # Add message in q_2bonsai with new_state, step_reward, done and truncated
+                    log.info("episode reward is %s" % (str(episode_reward))) 
                     log.info("q_2bonsai - Put Step_Bonsai")
                     msg2Bonsai = ('Step_Bonsai', {'new_state':new_state, 'step_reward':step_reward, 'done':done, 'truncated':truncated  })
                     q_2bonsai.put(msg2Bonsai) 
