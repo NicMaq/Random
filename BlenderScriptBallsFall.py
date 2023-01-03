@@ -17,6 +17,12 @@ if platform.system() == 'Linux':
     import site
     site.addsitedir('/home/nicolas/Workspace/ml/env310/lib/python3.10/site-packages')
 
+if platform.system() == 'Windows':
+    print('Adding path')
+    import site
+    site.addsitedir('C:/Users/nmaquaire/Workspace/ml/env310/Lib/site-packages')
+ 
+
 import imageio
 from skimage.transform import rescale, resize, downscale_local_mean
 import cv2
