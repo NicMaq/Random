@@ -1,37 +1,20 @@
-import bpy
-from bpy import context
+
 import numpy as np
 import os
 import platform
 import logging
 import time
 import threading
-import mathutils
 from typing import NamedTuple, Dict, Any
 from datetime import datetime
-import queue
 
 print('platform is ',platform.system())
-if platform.system() == 'Linux':
-    print('Adding path')
-    import site
-    site.addsitedir('/home/nicolas/Workspace/ml/env310/lib/python3.10/site-packages')
-
-if platform.system() == 'Windows':
-    print('Adding path')
-    import site
-    site.addsitedir('C:/Users/nmaquaire/Workspace/ml/env310/Lib/site-packages')
- 
-
-import imageio
-from skimage.transform import rescale, resize, downscale_local_mean
-import cv2
 
 from microsoft_bonsai_api.simulator.client import BonsaiClient, BonsaiClientConfig
 from microsoft_bonsai_api.simulator.generated.models import SimulatorInterface, SimulatorState, SimulatorSessionResponse
 
 
-log = logging.getLogger("blender_simulator")
+log = logging.getLogger("pi_simulator")
 log.setLevel(logging.INFO)
 
 workspace = os.getenv("SIM_WORKSPACE")
@@ -42,7 +25,7 @@ config_client = BonsaiClientConfig()
 client = BonsaiClient(config_client)
 
 registration_info = SimulatorInterface(
-    name="Blender",
+    name="PI_Sense",
     timeout=60,
     simulator_context=config_client.simulator_context,
     description=None,
@@ -51,21 +34,18 @@ registration_info = SimulatorInterface(
 registered_session: SimulatorSessionResponse = client.session.create(workspace_name=config_client.workspace, body=registration_info)
 print(f"Registered simulator. {registered_session.session_id}")
 
-
-#>>> platform.system()
 #Linux Darwin(MacOS) Windows
-if platform.system() == 'Linux':
-    log.info("Using Linux path")
-    SAVE_DIR = '/home/nicolas/Workspace/ml/logs/FallingBalls' #Ubuntu
-elif platform.system() == 'Darwin':
-    log.info("Using MacOS path")
-    SAVE_DIR = '/Users/nicolas/Workspace/ml/logs/FallingBalls' #MacOS
-else:
-    log.info("Using Windows path")
-    SAVE_DIR = 'C:/Users/nmaquaire/Workspace/ml/logs/FallingBalls' #Windows
+#if platform.system() == 'Linux':
+log.info("Using Linux path")
+SAVE_DIR = '/home/nicolas/Workspace/ml/logs/PI_sense' #Ubuntu
+#elif platform.system() == 'Darwin':
+#    log.info("Using MacOS path")
+#    SAVE_DIR = '/Users/nicolas/Workspace/ml/logs/PI_sense' #MacOS
+#else:
+#    log.info("Using Windows path")
+#    SAVE_DIR = 'C:/Users/nmaquaire/Workspace/ml/logs/PI_sense' #Windows
 
-#Parameters
-nBalls = 1
+#Global parameters
 run_thread = True
 
 class SimulatorModel:
